@@ -1,0 +1,12 @@
+# Ignore data and output folders
+data/
+output/
+
+# Ignore temporary and cache files
+__pycache__/
+*.pyc
+*.log
+
+# Ignore large files
+*.geojson
+*.csv
