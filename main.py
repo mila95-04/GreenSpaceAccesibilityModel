@@ -10,9 +10,12 @@ from step6_assign_to_grid import assign_classification_to_grid
 
 def main():
     # Load data
-    grid = load_geojson("data/Brabrand_G100.geojson")
-    green_zones = load_geojson("data\Brabrand_GreenZones_Compiled.geojson")
-    roads = load_geojson("data/BrabrandNetwork_Filtered.geojson")
+    grid = load_geojson (
+        r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\data\Brabrand_age_and_occupancy_250m.json")
+    green_zones = load_geojson(
+        r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\data\Brabrand_GreenZones_Compiled.geojson")
+    roads = load_geojson(
+        r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\data\BrabrandNetwork_Filtered.geojson")
 
     # Step 1: extract centroids
     centroids = extract_centroids(grid)
@@ -25,7 +28,7 @@ def main():
         centroids,
         green_zones,
         buffer_distance=150, #buffer changed to 150, remember to change back on the step script
-        export_debug="output/buffer_debug_G100_Brabrand_GreenZones_Compiled.geojson" #remember to change back to G250 if grid changes
+        export_debug=r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\output\Availability Index\buffer_debug_G250_Brabrand_GreenZones_Compiled.geojson" #remember to change back to G250 if grid changes
     )
 
      # Step 4: nearest road + nearest green zone
@@ -36,18 +39,18 @@ def main():
     centroids = classify_by_network_distance(
         roads,
         centroids,
-        export_csv="output/distances_debug_G100_Brabrand_GreenZones_Compiled.csv" #remember to change back to G250 if grid changes
+        export_csv=r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\output\Availability Index/distances_debug_G250_Brabrand_GreenZones_Compiled.csv" #remember to change back to G250 if grid changes
     )
 
     # Step 6: assign classifications back to the grid polygons
     classified_grid = assign_classification_to_grid(
         grid,
         centroids,
-        output_path="output/grid_classified_Brabrand_GreenZones_Compiled.geojson" #remember to change back to G250 if grid changes, also version
+        output_path=r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\output\Availability Index/grid_classified_Brabrand_GreenZones_Compiled.geojson" #remember to change back to G250 if grid changes, also version
     )
 
     # Save final classified centroids
-    save_geojson(centroids, "output/centroids_classified_G100_Brabrand_GreenZones_Compiled.geojson") #remember to change back to G250 if grid changes, also version
+    save_geojson(centroids, r"C:\Users\Ceballosc\OneDrive - AIT\Green space accesibility model\GreenSpaceAccesibilityModel\output\Availability Index/centroids_classified_G250_Brabrand_GreenZones_Compiled.geojson") #remember to change back to G250 if grid changes, also version
 
 
 if __name__ == "__main__":
