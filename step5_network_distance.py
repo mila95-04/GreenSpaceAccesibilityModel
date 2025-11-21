@@ -19,14 +19,12 @@ def build_graph(roads_gdf):
     return G
 
 
-def classify_by_network_distance(roads, centroids, export_csv=None, export_paths=True):
+def classify_by_network_distance(roads, centroids, green_zones=None, export_csv=None, export_paths=True):
     """
     Step 5: compute shortest path distances and classify into B, C, or D.
-    Also exports path geometries for QGIS visualization.
-
-    B = ≤100m
-    C = 100–250m
-    D = >250m
+    Also assigns:
+        - green_id (for C/D)
+        - green_area_sqm (for C/D)
     """
     # Build graph from roads
     G = build_graph(roads)
@@ -46,7 +44,7 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
             continue
 
         start_pt = row.get("nearest_road")
-        end_pt = row.get("nearest_green")
+        end_pt = row.get("nearest_green_geom")  # <-- UPDATED: use nearest geometry saved in Step 4
 
         if start_pt is None or end_pt is None:
             distances.append({
@@ -61,27 +59,25 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
             })
             continue
 
-        # Snap nearest_road and nearest_green to actual graph nodes
+        # Snap nearest_road and nearest_green to graph nodes
         _, start_idx = kdtree.query([start_pt.x, start_pt.y], k=1)
         _, end_idx = kdtree.query([end_pt.x, end_pt.y], k=1)
         start_node = tuple(coords[start_idx])
         end_node = tuple(coords[end_idx])
 
         try:
-            # Get shortest path and length
             path_nodes = nx.shortest_path(G, source=start_node, target=end_node, weight="weight")
             length = nx.shortest_path_length(G, source=start_node, target=end_node, weight="weight")
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             path_nodes = None
             length = None
 
-        # Ensure numeric type
         try:
             length = float(length)
         except (TypeError, ValueError):
             length = None
 
-        # Classification thresholds
+        # Classification rules
         if length is not None:
             if length <= 100:
                 label = "B"
@@ -90,11 +86,11 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
             elif length > 250:
                 label = "D"
             else:
-                label = "D" #standard is "none", changed to avoid nulls on export for DT uploading
+                label = "D"
         else:
-            label = "D" #standard is "none", changed to avoid nulls on export for DT uploading
+            label = "D"
 
-        # Record data
+        # Record
         distances.append({
             "centroid_id": cid,
             "distance": length,
@@ -106,28 +102,22 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
             "path_nodes": path_nodes
         })
 
-                   # --- Create path geometry safely for visualization ---
+        # --- Create path geometry safely for visualization ---
         if path_nodes and export_paths:
-            # Convert to numeric coordinate tuples
             valid_coords = []
             for xy in path_nodes:
                 if xy is None or len(xy) != 2:
                     continue
                 x, y = xy
-                if (
-                    x is not None and y is not None
-                    and not np.isnan(x) and not np.isnan(y)
-                    and np.isfinite(x) and np.isfinite(y)
-                ):
+                if x is not None and y is not None and np.isfinite(x) and np.isfinite(y):
                     valid_coords.append((float(x), float(y)))
 
-            # Remove consecutive duplicates
+            # Remove duplicate consecutive points
             deduped_coords = []
             for pt in valid_coords:
                 if not deduped_coords or deduped_coords[-1] != pt:
                     deduped_coords.append(pt)
 
-            # Create line only if >= 2 distinct, valid points
             if len(deduped_coords) > 1:
                 try:
                     path_geom = LineString(deduped_coords)
@@ -137,47 +127,18 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
                         "distance": length,
                         "geometry": path_geom
                     })
-                except Exception as e:
+                except Exception:
                     skipped_paths += 1
-                    print(f"⚠️ Skipped invalid path for centroid {cid}: {e}")
             else:
-                skipped_paths += 1  # single or invalid coordinate list
-                print(f"⚠️ Skipped centroid {cid}: path had <2 valid points or duplicate coordinates.")
+                skipped_paths += 1
 
-
-    # Export extended debug CSV
+    # Export debug CSV
     if export_csv:
-        df = pd.DataFrame(distances)
-        df.to_csv(export_csv, index=False)
-        print(f"✅ Exported extended distance debug CSV: {export_csv}")
+        pd.DataFrame(distances).to_csv(export_csv, index=False)
 
-    # Export zero-distance cases as GeoJSON for QGIS inspection
-    zero_debug = [
-        {
-            "centroid_id": d["centroid_id"],
-            "geometry": LineString([
-                Point(d["start_x"], d["start_y"]),
-                Point(d["end_x"], d["end_y"])
-            ])
-        }
-        for d in distances if d["distance"] == 0 and d["start_x"] is not None
-    ]
-
-    if zero_debug:
-        zero_gdf = gpd.GeoDataFrame(zero_debug, geometry="geometry", crs=centroids.crs)
-        zero_gdf.to_crs(epsg=4326).to_file("output/debug_zero_distance_Brabrand_Horticulture.geojson", driver="GeoJSON") #change file name here
-        print(f"⚠️ Exported {len(zero_gdf)} zero-distance cases for QGIS inspection.")
-
-    # Export all computed paths
-    if path_records:
-        paths_gdf = gpd.GeoDataFrame(path_records, geometry="geometry", crs=centroids.crs)
-        paths_gdf.to_crs(epsg=4326).to_file("output/debug_paths_Brabrand_Horticulture.geojson", driver="GeoJSON") #change file name here
-        print(f"📍 Exported {len(paths_gdf)} network paths for QGIS visualization.")
-    if skipped_paths > 0:
-        print(f"⚠️ Skipped {skipped_paths} single-point paths (likely zero-distance cases).")
-
-    # Update centroids with results
+    # Update centroid attributes with results
     dist_map = {d["centroid_id"]: d for d in distances}
+
     centroids["network_distance"] = centroids.index.map(
         lambda cid: dist_map[cid]["distance"] if cid in dist_map else None
     )
@@ -188,5 +149,25 @@ def classify_by_network_distance(roads, centroids, export_csv=None, export_paths
         axis=1,
     )
 
-    return centroids
+    # --------------------------------------------------------------------
+    # 🔥 NEW PART: Assign green_id and green_area_sqm for C/D centroids
+    # --------------------------------------------------------------------
+    if green_zones is not None:
+        # Ensure polygon IDs and areas exist
+        if "green_id" not in green_zones.columns:
+            green_zones["green_id"] = green_zones.index
+        if "green_area_sqm" not in green_zones.columns:
+            green_zones["green_area_sqm"] = green_zones.geometry.area
 
+        # Assign green_id for C and D cells using Step 4 result
+        centroids.loc[
+            centroids["classified"].isin(["C", "D"]),
+            "green_id"
+        ] = centroids["nearest_green_id"]
+
+        # Assign area
+        centroids["green_area_sqm"] = centroids["green_id"].map(
+            green_zones.set_index("green_id")["green_area_sqm"]
+        )
+
+    return centroids
